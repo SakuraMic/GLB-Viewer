@@ -1,10 +1,8 @@
-
-
 /*
 	Copyright Abhinav Singh Chauhan (@xclkvj)
 	Copying the contents of this file by any means is prohibited.
 */
-
+let savedPointsWithComments = [];
 const ViewerBG = '#eee';
 const ViewerUI = {
 	canvasWrapper: document.getElementById('viewerCanvasWrapper'),
@@ -21,7 +19,11 @@ const ViewerUI = {
 	explodeSlider: document.getElementById('explodeSlider'),
 	toggleExplode: document.getElementById('toggleExplode'),
 	toggleShare: document.getElementById('toggleShare'),
-	shareSidebar: document.getElementById('shareSidebar'),
+	toggleComment: document.getElementById('toggleComment'),
+	addComment: document.getElementById('addComment'),
+	saveComment: document.getElementById('saveComment'),
+	loadComment: document.getElementById('loadComment'),
+	bottomRightContainer: document.getElementById('bottomRightContainer'),
 	loader: document.getElementById('loader'),
 	toggleMeasure: document.getElementById('toggleMeasure'),
 	loaderInfo: document.getElementById('loaderInfo'),
@@ -30,6 +32,27 @@ const ViewerUI = {
 	downloadScreen: document.getElementById('downloadScreen'),
 	explodeFace: document.getElementById('explodeFace')
 };
+
+ViewerUI.loadComment.onclick = function() {
+	const jsFileInput = document.getElementById('jsFileInput');
+	jsFileInput.click();
+
+	jsFileInput.addEventListener('change', function(event) {
+		const file = event.target.files[0];
+		if (file) {
+			const reader = new FileReader();
+			reader.onload = function(e) {
+				const fileData = e.target.result;
+				loadPointsWithCommentsFromFile(fileData);
+			};
+			reader.readAsText(file);
+		}
+	});
+};
+
+function loadPointsWithCommentsFromFile(fileData) {
+	//not finish yet
+}
 
 function setItemSelected(ele, bool) {
 	if (bool) {
@@ -66,7 +89,6 @@ function hide(ele) {
 }
 
 function Viewer() {
-
 	ViewerUI.downloadScreen.onclick = function() {
 		const canvas = renderer.domElement;
 		renderAll();
@@ -344,7 +366,7 @@ function Viewer() {
 		explodeFace = temp2;
 	}
 	
-	toggleThrough(ViewerUI.shareSidebar, ViewerUI.toggleShare);
+	//toggleThrough(ViewerUI.shareSidebar, ViewerUI.toggleShare);
 	toggleThrough(ViewerUI.modelBrowser, ViewerUI.toggleModelBrowser);
 	
 	ViewerUI.explodeSlider.oninput = function() {
@@ -412,9 +434,38 @@ function Viewer() {
 			lineScene.remove.apply(lineScene, lineScene.children);
 			spriteScene.remove.apply(spriteScene, spriteScene.children);
 		}
+		if(selectedTool != null){
+			isInCommentMode = false;
+			setItemSelected(selectedTool, false);
+			ViewerUI.bottomRightContainer.style.display = 'none';
+		}
+		if(isInMeasureMode){
+			selectedTool = this;
+		}
 		setItemSelected(this, isInMeasureMode);
 	}
-	
+
+	ViewerUI.toggleComment.onclick = function(){
+		isInCommentMode = !isInCommentMode;
+		if(selectedTool != null){
+			isInMeasureMode = false;
+			lineScene.remove.apply(lineScene, lineScene.children);
+			spriteScene.remove.apply(spriteScene, spriteScene.children);
+			setItemSelected(selectedTool, false);
+			ViewerUI.bottomRightContainer.style.display = 'none';
+		}
+		if(isInCommentMode){
+			selectedTool = this;
+			ViewerUI.bottomRightContainer.style.display = 'block';
+		}
+		setItemSelected(this, isInCommentMode);
+	}
+
+	ViewerUI.addComment.onclick = function(){
+		isInAddCommentMode = !isInAddCommentMode;
+		setItemSelected(this, isInAddCommentMode);
+	}
+
 	ViewerUI.resetBtn.onclick = ViewerUI.backToHome.onclick =function() {
 		resetAll();
 	}
@@ -424,7 +475,10 @@ function Viewer() {
 		lineScene.remove.apply(lineScene, lineScene.children);
 		spriteScene.remove.apply(spriteScene, spriteScene.children);
 		isInMeasureMode = false;
+		isInCommentMode = false;
 		setItemSelected(ViewerUI.toggleMeasure, false);
+		setItemSelected(ViewerUI.toggleComment, false);
+		ViewerUI.bottomRightContainer.style.display = 'none';
 		ViewerUI.explodeSliderWrapper.style.display = 'none';
 		ViewerUI.explodeFace.checked = false;
 		explodeFace = false;
@@ -490,8 +544,11 @@ function Viewer() {
 	renderer.setPixelRatio(window.deivicePixelRatio);
 
 	let isInMeasureMode = false;
+	let isInCommentMode = false;
+	let isInAddCommentMode = false;
 	let lineScene = new THREE.Scene();
 	let spriteScene = new THREE.Scene();
+	let spriteSceneComment = new THREE.Scene();
 
 	function makeCircleImage() {
 		let canvas = document.createElement('canvas');
@@ -527,6 +584,14 @@ function Viewer() {
 		map: circleTexture,
 		sizeAttenuation: false 
 	});
+	let circleMaterialComment = new THREE.SpriteMaterial({
+		map: circleTexture,
+		color: 0xffff00,
+		sizeAttenuation: false 
+	})
+	let circleSpriteComment = new THREE.Sprite(circleMaterialComment);
+	circleSpriteComment.scale.setScalar(0.08);
+	circleSpriteComment.name = "abc";
 	let circleSprite = new THREE.Sprite(circleMaterial);
 	circleSprite.scale.setScalar(0.08);
 
@@ -536,12 +601,12 @@ function Viewer() {
 	});
 
 	let activeLine = null;
-
+	var selectObject = null;
 	renderer.domElement.onclick = function(evt) {
 		if (hasMoved) {
 			return false;
 		}
-		
+
 		evt = evt || window.event;
 		
 		let x = evt.offsetX;
@@ -595,8 +660,111 @@ function Viewer() {
 				}
 			}
 		}
+
+		//Function to add comment
+		let textSprite;
+		let textInput = "";
+		let line;
+		let offset = 3; // for setting offset of text to the point
+
+		if (isInCommentMode) {
+			if (isInAddCommentMode) {
+				let sprite = circleSpriteComment.clone();
+				let point = intersects[0].point;
+				sprite.position.copy(point.clone());
+				textInput = prompt("Enter your comment:"); // Prompt the user to enter text
+				if (textInput != null && textInput != "") {
+					savedPointsWithComments.push({
+						point: point.clone(),
+						comment: textInput
+					});
+
+					spriteSceneComment.add(sprite); //add the point
+		
+					// Create a text sprite
+					textSprite = createTextSprite(textInput);
+					textSprite.position.copy(point.clone());
+					textSprite.position.x += offset;
+					textSprite.position.y += offset;
+					textSprite.position.z += offset;
+					spriteSceneComment.add(textSprite);
+		
+					// Create a Line between the point and textSprite
+					const lineGeometry = new THREE.BufferGeometry().setFromPoints([point, textSprite.position]);
+					const lineMaterial = new THREE.LineBasicMaterial({ color: 'green' }); // adjust the color of line
+					line = new THREE.Line(lineGeometry, lineMaterial);
+					spriteSceneComment.add(line);
+				}
+				isInAddCommentMode = false;
+				setItemSelected(addComment, false);
+			}
+		}
+		
+		ViewerUI.saveComment.onclick = function(){
+			savePointsWithCommentsToFile();
+		}
+
+		function savePointsWithCommentsToFile() {
+			const data = JSON.stringify(savedPointsWithComments, null, 2);
+			const blob = new Blob([data], { type: 'application/json' });
+			const url = URL.createObjectURL(blob);
+			
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = 'pointsWithComments.js'; // adjust the name of the .js file
+			a.click();
+			
+			URL.revokeObjectURL(url);
+		}
+
+		function createTextSprite(text) {
+			const canvas = document.createElement('canvas');
+			const context = canvas.getContext('2d');
+			const fontSize = 20; // Adjust the font size as needed
+			const fontFamily = 'Arial';
+			const borderWidth = 1; // Adjust the border width as needed
+			const borderColor = 'black'; // Adjust the border color as needed
+		
+			const dpi = window.devicePixelRatio || 1;
+			const scale = 2; // Adjust the scale factor for higher resolution
+		
+			context.font = `${fontSize}px ${fontFamily}`;
+			const textMetrics = context.measureText(text);
+			const textWidth = textMetrics.width;
+			const textHeight = fontSize + borderWidth * 2;
+		
+			canvas.width = (textWidth + borderWidth * 2) * scale * dpi;
+			canvas.height = textHeight * scale * dpi;
+		
+			context.scale(scale * dpi, scale * dpi);
+		
+			// Draw border
+			context.strokeStyle = borderColor;
+			context.lineWidth = borderWidth;
+			context.strokeRect(borderWidth, borderWidth, textWidth, fontSize);
+		
+			// Draw text
+			context.font = `${fontSize}px ${fontFamily}`;
+			context.fillStyle = 'black';
+			context.fillText(text, borderWidth, fontSize + borderWidth - 5);
+		
+			const texture = new THREE.CanvasTexture(canvas);
+			texture.minFilter = THREE.LinearFilter;
+		
+			const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+			const sprite = new THREE.Sprite(spriteMaterial);
+		
+			const desiredWidth = textWidth;
+			const desiredHeight = (desiredWidth * textHeight) / textWidth;
+		
+			sprite.scale.set(desiredWidth / fontSize, desiredHeight / fontSize, 1);
+		
+			return sprite;
+		}
 	}
 	
+		
+
 	function resetSelect() {
 		scene.traverse(child => {
 			child.isSelected = false;
@@ -668,10 +836,10 @@ function Viewer() {
 		let length = v[0].clone().sub(v[1]).length().toFixed(1);
 		let text = '~ ' + length;
 		let size = ctx.measureText(text);
-		let paddingLeft = 20;
+		let paddingLeft = 10;
 		let paddingTop = 10;
 		let margin = 10;
-		canvas.width = size.width + paddingLeft * 2 + margin * 2;
+		canvas.width = size.width + paddingLeft * 2 + margin * 2 +25;
 		canvas.height = fontsize + paddingTop * 2 + margin * 2;
 
 		ctx.shadowBlur = 10;
@@ -684,7 +852,7 @@ function Viewer() {
 		ctx.textAlign = 'left';
 		ctx.textBaseline = 'top';
 		ctx.font = 'bolder ' + fontsize + 'px "Open Sans", Arial';
-		ctx.fillText(text, paddingLeft + margin, paddingTop + margin);
+		ctx.fillText(text+'m', paddingLeft + margin, paddingTop + margin);
 
 		let texture = new THREE.CanvasTexture(canvas);
 		let sprite = new THREE.Sprite(new THREE.SpriteMaterial({
@@ -749,7 +917,7 @@ function Viewer() {
 	
 	wrapper.appendChild(renderer.domElement);
 	window.addEventListener('resize', onResize, false);
-	
+
 	let gltfLoader = new THREE.GLTFLoader();
 	let loadedScene = null;
 	let loadedMeshes = [];
@@ -984,13 +1152,15 @@ function Viewer() {
 	let selectedModeElement = ViewerUI.toggleOrbit;
 	setOrbitMode();
 
+	let selectedTool = null;
+
 	camera.position.z = d;
 	camera.lookAt(scene.position);
 	controller.update();
 	controller.saveState();
 	
 	let ambientLight = new THREE.AmbientLight();
-	ambientLight.intensity = 1;
+	ambientLight.intensity = 0.4;
 	scene.add(ambientLight);
 
 	let directionalLight = new THREE.DirectionalLight();
@@ -1033,6 +1203,11 @@ function Viewer() {
 			renderer.clearDepth();
 			renderer.render(spriteScene, camera);
 		}
+		//if(isInCommentMode){
+			renderer.clearDepth();
+			renderer.render(spriteSceneComment, camera);
+		//}
+		
 	}
 	
 	function animate(time) {
@@ -1049,12 +1224,12 @@ function Viewer() {
 				play = false;
 			}
 		}
-		
+
 		requestAnimationFrame(animate);
 		controller.update();
 		renderAll();
 	}
-	
+
 	requestAnimationFrame(animate);
 	
 	return {

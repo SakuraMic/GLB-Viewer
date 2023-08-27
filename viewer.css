@@ -211,6 +211,13 @@
 	display: flex;
 }
 
+.bottom-right-container {
+	position: absolute;
+	right: 10px;
+	top: 740px;
+	display: flex;
+}
+
 .left-sidebar {
 	position: absolute;
 	left: 0;
